@@ -28,20 +28,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $bedrooms = trim($_POST['bedrooms'] ?? '1');
     $bathrooms = trim($_POST['bathrooms'] ?? '1');
     $status = trim($_POST['status'] ?? 'Available');
-    $image_url = trim($_POST['image_url'] ?? '');
     $description = trim($_POST['description'] ?? '');
+    $imageUrl = $house['image_url'] ?? null;
+
     if ($title === '' || $location === '' || $price === '') {
         $error = 'Title, location, and price are required.';
     } else {
-        $stmt = $conn->prepare('UPDATE houses SET title = ?, location = ?, price = ?, bedrooms = ?, bathrooms = ?, status = ?, image_url = ?, description = ? WHERE id = ?');
-        $stmt->bind_param('ssddisssi', $title, $location, $price, $bedrooms, $bathrooms, $status, $image_url, $description, $id);
-        if ($stmt->execute()) {
-            $stmt->close();
-            header('Location: manage-houses.php');
-            exit;
+        if (isset($_FILES['image_file']) && $_FILES['image_file']['error'] === UPLOAD_ERR_OK) {
+            $allowed = ['jpg', 'jpeg', 'png', 'webp'];
+            $fileName = basename($_FILES['image_file']['name']);
+            $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+            if (!in_array($fileExt, $allowed, true)) {
+                $error = 'Only JPG, JPEG, PNG, and WEBP files are allowed.';
+            } else {
+                $targetDir = __DIR__ . '/../uploads/';
+                if (!is_dir($targetDir)) {
+                    mkdir($targetDir, 0777, true);
+                }
+                $newFileName = 'house_' . $id . '_' . time() . '.' . $fileExt;
+                $targetPath = $targetDir . $newFileName;
+                if (move_uploaded_file($_FILES['image_file']['tmp_name'], $targetPath)) {
+                    $imageUrl = 'uploads/' . $newFileName;
+                } else {
+                    $error = 'Unable to upload the image.';
+                }
+            }
         }
-        $error = 'Unable to update house. Please try again.';
-        $stmt->close();
+
+        if ($error === '') {
+            $stmt = $conn->prepare('UPDATE houses SET title = ?, location = ?, price = ?, bedrooms = ?, bathrooms = ?, status = ?, image_url = ?, description = ? WHERE id = ?');
+            $stmt->bind_param('ssddisssi', $title, $location, $price, $bedrooms, $bathrooms, $status, $imageUrl, $description, $id);
+            if ($stmt->execute()) {
+                $stmt->close();
+                header('Location: manage-houses.php');
+                exit;
+            }
+            $error = 'Unable to update house. Please try again.';
+            $stmt->close();
+        }
     }
 }
 ?>
@@ -55,7 +79,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php if ($error): ?>
                         <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
                     <?php endif; ?>
-                    <form method="post" action="<?= root('admin/edit-house.php') ?>?id=<?= $id ?>">
+                    <form method="post" action="<?= root('admin/edit-house.php') ?>?id=<?= $id ?>" enctype="multipart/form-data">
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label class="form-label">Title</label>
@@ -85,8 +109,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </select>
                             </div>
                             <div class="col-md-12">
-                                <label class="form-label">Image URL</label>
-                                <input type="url" name="image_url" class="form-control" value="<?= htmlspecialchars($_POST['image_url'] ?? $house['image_url']) ?>" placeholder="https://example.com/image.jpg">
+                                <label class="form-label">Upload New Image</label>
+                                <input type="file" name="image_file" class="form-control" accept="image/*">
+                                <?php if (!empty($house['image_url'])): ?>
+                                    <div class="form-text">Current image: <?= htmlspecialchars($house['image_url']) ?></div>
+                                <?php endif; ?>
                             </div>
                             <div class="col-md-12">
                                 <label class="form-label">Description</label>
